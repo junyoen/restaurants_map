@@ -1,24 +1,25 @@
 // 지도 관련 변수 선언
 let map;
 let markers = [];
-let infowindows = [];
+let infoWindows = [];
 
 // 지도 초기화 함수
 function initMap() {
     // 기본 중심 좌표 (서울시청)
-    const defaultCenter = new kakao.maps.LatLng(37.566826, 126.9786567);
+    const defaultCenter = new naver.maps.LatLng(37.566826, 126.9786567);
     
     // 지도 생성
-    const container = document.getElementById('map');
-    const options = {
+    map = new naver.maps.Map('map', {
         center: defaultCenter,
-        level: 5  // 확대 레벨 (낮을수록 확대)
-    };
-    
-    map = new kakao.maps.Map(container, options);
+        zoom: 12,  // 확대 레벨
+        zoomControl: true,
+        zoomControlOptions: {
+            position: naver.maps.Position.TOP_RIGHT
+        }
+    });
     
     // 지도 생성 확인 로그
-    console.log("카카오맵 초기화 완료");
+    console.log("네이버 지도 초기화 완료");
     
     // 맛집 데이터 로드
     loadRestaurantData();
@@ -38,38 +39,51 @@ function displayMarkers(restaurants, category = 'all') {
     
     // 마커 생성 및 표시
     filteredRestaurants.forEach(restaurant => {
-        const position = new kakao.maps.LatLng(restaurant.lat, restaurant.lng);
+        const position = new naver.maps.LatLng(restaurant.lat, restaurant.lng);
         
         // 마커 생성
-        const marker = new kakao.maps.Marker({
+        const marker = new naver.maps.Marker({
             position: position,
-            map: map
+            map: map,
+            title: restaurant.name,
+            icon: {
+                content: `<div class="marker">${restaurant.name}</div>`,
+                anchor: new naver.maps.Point(20, 20)
+            }
         });
         
-        // 인포윈도우(정보창) 내용 구성
+        // 인포윈도우 내용 구성
         const infoContent = `
             <div class="info-window">
                 <h3>${restaurant.name}</h3>
-                <p>카테고리: ${restaurant.category}</p>
+                <p class="category">카테고리: ${restaurant.category}</p>
                 <p>주소: ${restaurant.address || '정보 없음'}</p>
                 <p>전화: ${restaurant.phone || '정보 없음'}</p>
-                <p>메뉴: ${restaurant.menu || '정보 없음'}</p>
+                ${restaurant.menu ? `<p>메뉴: ${restaurant.menu}</p>` : ''}
             </div>
         `;
         
         // 인포윈도우 생성
-        const infowindow = new kakao.maps.InfoWindow({
+        const infoWindow = new naver.maps.InfoWindow({
             content: infoContent,
-            removable: true
+            maxWidth: 300,
+            backgroundColor: "#fff",
+            borderColor: "#ccc",
+            borderWidth: 2,
+            anchorSize: new naver.maps.Size(20, 10),
+            pixelOffset: new naver.maps.Point(0, -10)
         });
         
-        // 마커 클릭 시 인포윈도우 표시
-        kakao.maps.event.addListener(marker, 'click', function() {
+        // 마커 클릭 이벤트 설정
+        naver.maps.Event.addListener(marker, 'click', function() {
             // 다른 인포윈도우 닫기
             closeAllInfoWindows();
-            infowindow.open(map, marker);
+            
+            // 현재 인포윈도우 열기
+            infoWindow.open(map, marker);
+            
             // 인포윈도우 배열에 추가
-            infowindows.push(infowindow);
+            infoWindows.push(infoWindow);
         });
         
         // 마커 배열에 추가
@@ -84,33 +98,40 @@ function displayMarkers(restaurants, category = 'all') {
 
 // 모든 마커 제거 함수
 function removeAllMarkers() {
-    for (let i = 0; i < markers.length; i++) {
-        markers[i].setMap(null);
-    }
+    markers.forEach(marker => {
+        marker.setMap(null);
+    });
     markers = [];
     closeAllInfoWindows();
 }
 
 // 모든 인포윈도우 닫기
 function closeAllInfoWindows() {
-    for (let i = 0; i < infowindows.length; i++) {
-        infowindows[i].close();
-    }
-    infowindows = [];
+    infoWindows.forEach(infoWindow => {
+        infoWindow.close();
+    });
+    infoWindows = [];
 }
 
 // 지도 범위 재설정 함수
 function adjustMapBounds(restaurants) {
-    // LatLngBounds 객체 생성
-    const bounds = new kakao.maps.LatLngBounds();
+    if (restaurants.length === 0) return;
+    
+    // 경계 객체 생성
+    const bounds = new naver.maps.LatLngBounds();
     
     // 모든 맛집 좌표를 bounds에 추가
     restaurants.forEach(restaurant => {
-        bounds.extend(new kakao.maps.LatLng(restaurant.lat, restaurant.lng));
+        bounds.extend(new naver.maps.LatLng(restaurant.lat, restaurant.lng));
     });
     
-    // 지도 범위 재설정
-    map.setBounds(bounds);
+    // 지도 범위 재설정 (약간 여유를 두기 위해 padding 추가)
+    map.fitBounds(bounds, {
+        top: 50,
+        right: 50,
+        bottom: 50,
+        left: 50
+    });
 }
 
 // 전역 변수
@@ -118,8 +139,13 @@ let restaurantData = [];
 
 // JSON 데이터 로드 함수
 function loadRestaurantData() {
-    fetch('./data/restaurants.json')
-        .then(response => response.json())
+    fetch('data/restaurants.json')
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP 에러! 상태: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
             restaurantData = data;
             console.log('맛집 데이터 로드 완료:', restaurantData.length + '개');
@@ -130,7 +156,70 @@ function loadRestaurantData() {
             // 카테고리 버튼 이벤트 설정
             setupCategoryButtons();
         })
-        .catch(error => console.error('데이터 로드 오류:', error));
+        .catch(error => {
+            console.error('데이터 로드 오류:', error);
+            
+            // 오류 시 샘플 데이터 생성 (테스트용)
+            createSampleData();
+        });
+}
+
+// 샘플 데이터 생성 (데이터 로드 실패 시)
+function createSampleData() {
+    console.log('샘플 데이터 생성 중...');
+    restaurantData = [
+        {
+            name: "을지면옥",
+            category: "한식",
+            lat: 37.566826,
+            lng: 126.982652,
+            address: "서울 중구 명동길 42",
+            phone: "02-123-4567",
+            menu: "평양냉면, 불고기"
+        },
+        {
+            name: "탕화쿵푸",
+            category: "중식",
+            lat: 37.574231,
+            lng: 126.976904,
+            address: "서울 종로구 종로8길 16",
+            phone: "02-987-6543",
+            menu: "마라탕, 꿔바로우"
+        },
+        {
+            name: "스시효",
+            category: "일식",
+            lat: 37.526320,
+            lng: 127.035473,
+            address: "서울 강남구 강남대로 552",
+            phone: "02-555-7890",
+            menu: "오마카세, 사시미"
+        },
+        {
+            name: "빌라드샬롯",
+            category: "양식",
+            lat: 37.540256,
+            lng: 127.068254,
+            address: "서울 광진구 아차산로 200",
+            phone: "02-432-5678",
+            menu: "파스타, 스테이크"
+        },
+        {
+            name: "디저트39",
+            category: "카페",
+            lat: 37.556827,
+            lng: 126.926520,
+            address: "서울 마포구 와우산로 29",
+            phone: "02-332-9988",
+            menu: "티라미수, 딸기케이크"
+        }
+    ];
+    
+    // 샘플 데이터로 지도 표시
+    displayMarkers(restaurantData);
+    
+    // 카테고리 버튼 이벤트 설정
+    setupCategoryButtons();
 }
 
 // 카테고리 버튼 이벤트 설정
@@ -154,12 +243,5 @@ function setupCategoryButtons() {
     });
 }
 
-// 카카오맵 API가 로드된 후 초기화
-document.addEventListener('DOMContentLoaded', function() {
-    console.log("DOM 로드 완료, 카카오맵 API 로드 시작");
-    // autoload=false 옵션으로 지정했기 때문에 명시적으로 로드
-    kakao.maps.load(function() {
-        console.log("카카오맵 API 로드 완료");
-        initMap();
-    });
-});
+// 페이지 로드 시 지도 초기화
+document.addEventListener('DOMContentLoaded', initMap);
